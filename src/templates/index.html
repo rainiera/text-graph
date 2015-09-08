@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <link rel="icon" href="../../favicon.ico">
+
+    <title>text-graph - Rainier Ababao</title>
+
+    <!-- Latest compiled and minified CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+
+    <!-- Optional theme -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap-theme.min.css">
+
+    <!-- Latest compiled and minified JavaScript -->
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+
+    <!-- Custom styles for this template -->
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/styles.css') }}">
+
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/8.7/styles/default.min.css">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/8.7/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+
+  </head>
+
+  <body>
+
+    <!-- Fixed navbar -->
+    <nav class="navbar navbar-default navbar-fixed-top">
+      <div class="container">
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+          <a class="navbar-brand" href="#">this is text-graph</a>
+        </div>
+        <div id="navbar" class="navbar-collapse collapse">
+          <ul class="nav navbar-nav">
+            <li class="active"><a href="#">how to</a></li>
+            <li><a href="#data">data viz</a></li>
+            <li><a href="#improve">improve</a></li>
+            <li><a href="https://github.com/rainiera/text-graph" target="_blank">code</a></li>
+          </ul>
+          <ul class="nav navbar-nav navbar-right">
+            <li><a href="http://rainier.io" target="_blank">rainier.io</a></li>
+          </ul>
+        </div><!--/.nav-collapse -->
+      </div>
+    </nav>
+
+    <div class="container">
+
+        <div class="jumbotron">
+        <h1>text-graph</h1>
+        <h6>keywords: <span class="text-muted">machine learning, graphs, social networks, sentiment analysis, named entity recognition, data visualization, pre-trained models, python</span></h6>
+        <h6>description: <span class="text-muted">project explanation and data visualization dashboard of a graph network of contact nodes and weighted edges representing degree of sentiment to other contact nodes</span></h6>
+
+        <h2>Steps</h2>
+        <h3>Set Up</h3>
+            <p>
+                Development environment, what's good? For a lot of hard/data science-oriented tasks, the <strong><a href='https://store.continuum.io/cshop/anaconda/' target='_blank'>Anaconda</a></strong> distribution of Python will be sufficient. <strong><a href='https://www.jetbrains.com/pycharm/'>PyCharm</a></strong> for static type-checking and quickly accessing docstrings, since I'm using a lot of unfamiliar libraries.
+            </p>
+          <h3> Data wrangling </h3>
+          <p>
+                - Grab texts from Go SMS Pro (an alternative text-messaging app) backups (XML format)
+                <br>
+                - Parse XML tree using <code>cElementTree</code> from the <code>xml</code> Python lib to get contact names, texts, etc.
+                <br>
+                - Create in-memory data structures in Python using data from the XML tree:
+<pre><code class='python'>class TextCorpus(object):
+    """It's a graph."""
+
+    def __init__(self):
+        self.contacts = get_contact_objs()
+        self.contact_names = names.values()
+        self.global_adj_list = [item for sublist in
+                                            map(lambda x: getattr(x, 'adj_list'), self.contacts)
+                                                for item in sublist]
+        self.global_pair_map = dict(zip(map(lambda x: getattr(x, 'name'), self.contacts),
+                                                map(lambda x: getattr(x, 'adj_list'), self.contacts)))
+        self.global_pair_flat_list = map(lambda x: getattr(x, 'adj_list'), self.contacts)
+
+class Contact(object):
+    """A Contact obj reprs one of the people I've contacted."""
+
+    def __init__(self, fn):
+        self.name = get_name_from_fn(fn)
+        self.messages = get_texts(fn, False)
+        self.messages_str_list = map(lambda x: getattr(x, 'body'), self.messages)
+        self.links = get_mentions_msg_list(self.messages_as_str_list)
+        self.unweighted_links = tuple(set(get_mentions_msg_list(self.messages_as_str_list)))
+        self.weighted_links = Counter(get_mentions_msg_list(self.messages_as_str_list))
+        self.adjacency_list = map(lambda x: tuple([self.name, x]),
+                                            list(set(get_mentions_msg_list(self.messages_as_str_list))))
+        self.sentiment_links = get_sentiment_link_dict(self.weighted_links, self.name)
+        self.avg_sentiment = 0.5 if len(self.sentiment_links) is 0
+                                 else float(sum(self.sentiment_links.values())) / len(self.sentiment_links)</code></pre>
+          </p>
+          <h3>Contact Privacy</h3>
+          <p>
+            There's definitely a concern for privacy since these are texts between my friends...
+            <br>
+            For each <code>Contact</code> in <code>TextCorpus</code>, grab their <code>TextMessage</code> objs. If a contact name is in the body of the text, perform a hex digest of the name and <code>humanize</code> the hash.
+
+<pre><code class='python'>import humanhash
+import hashlib
+
+class TextMessage(object):
+    """A TextMessage obj's attrs correspond to the XML tags I care about."""
+
+    def __init__(self, msg_id, posix, sent, body, sender):
+        self.msg_id = msg_id
+        self.posix = posix
+        self.sent = sent
+        self.body = 'neutral' if body is None else anonymize(body.lower())
+        self.mentions = get_mentions(self.body)
+        self.sender = sender if self.sent is False else 'rainier'
+
+def anonymize(msg):
+    """Anonymizes a single text body.
+    e.g. 'Robert is a nerrrrrrrd' -> 'waffle-panda-theory-rushmore is a nerrrrrrrd'
+    """
+    for orig, hmhashed in names.iteritems():
+        msg = msg.replace(orig, hmhashed)
+    return msg
+
+def digest_and_humanize(word):
+    m = hashlib.md5()
+    m.update(word)
+    return humanhash.humanize(m.hexdigest())</code></pre>
+          </p>
+          <h3> Sentiment analysis </h3>
+          <p>
+            In the interest of time when I was working on it, I used pre-trained models from <strong><a href="http://indico.io" target="_blank">Indico</a></strong>'s high-quality sentiment API on short texts. They report about a 93% accuracy rate on the IMDB movie review corpus.
+            <br><br>
+            <em>Aside: There are lots of papers and tutorials on sentiment analysis algorithms using machine learning. Some 'not really machine learning' methods involve using a list of 'happy' words such as 'awesome' and 'great' to increase the sentiment. Could also use Naïve Bayes classifier which is a bit more sophisticated. </em>But anyway...
+            <br><br>
+            Since I can only freely hit the Indico API 100,000 times, I had to find a way to store API call results persistently, and also unit test. I could have used a database, but for now, <code>pandas</code> has good tools for parsing <code>.csv</code>
+            <br>
+
+
+
+<pre><code class='python'>from texts.config import INDICO_API_KEY
+
+def indico_batch_sentiment():
+    """a ONE-OFF method to call the indico.io API to HQ batch sentiment 18192 texts.
+
+    Stores it as sentiments.csv in the working dir.
+    """
+    with open('sentiments.csv', 'wb') as f:
+        texts = []
+        writer = csv.writer(f)
+        with open('texts/filenames.txt', 'r') as filenames:
+            fn_list = map(str.strip, [filename for filename in filenames])
+            fn_list = map(lambda x: 'texts/texts/' + x, fn_list)
+            for fn in fn_list:
+                texts.append(get_texts(fn)) # returns TextMessage object
+        texts = [item for sublist in texts for item in sublist]
+        with open('indico_sentiment_hq_errors.txt', 'w') as error_log:
+            for text in texts:
+                sentiment_result = None
+                try:
+                    sentiment_result = sentiment_hq(text.body.encode(), api_key=INDICO_API_KEY)
+                except BaseException as e:
+                    error_log.write(str(e))
+                finally:
+                    writer.writerow([unicode(s).encode('utf-8') for s in
+                                     [text.msg_id, text.posix, repr(text.sent),
+                                      text.body, repr(text.mentions), sentiment_result]])</code></pre>
+          </p>
+        </div>
+
+        <div id="improve" class='jumbotron'>
+                <h2>Ways to improve</h2>
+                <ul>
+                    <li><p>
+                        Didn't include emoji <span class='glyphicon glyphicon-eye-open'></span><span class='glyphicon glyphicon-eye-open'></span> or use a different encoding for them because it was breaking Python's standard library csv file IO. Of course, I was going back and forth between <code>pandas</code> and <code>csvfile</code>. Could be an easy sentiment multiplier.
+                    </p></li>
+                    <li><p>
+                        I have a contact named Will... maybe y'all could guess what happened then, or what <em>will</em> happen if people use that word...
+                    </p></li>
+                    <li><p>
+                        I could have gotten Facebook's data dump or backed up all my texts from this year as well. But I think at like 18200 texts my computer could handle enough.
+                        Could have used more compute power.
+                    </p></li>
+                </ul>
+        </div>
+
+    </div> <!-- /container -->
+
+
+    <footer class="footer">
+      <div class="container">
+      &copy; 2015. All rights reserved.
+      <br><br>
+      </div>
+    </footer>
+
+    <!-- Bootstrap core JavaScript
+    ================================================== -->
+    <!-- Placed at the end of the document so the pages load faster -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+    <script src="../../dist/js/bootstrap.min.js"></script>
+    <!-- IE10 viewport hack for Surface/desktop Windows 8 bug -->
+    <script src="../../assets/js/ie10-viewport-bug-workaround.js"></script>
+  </body>
+</html>
